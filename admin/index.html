@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><title>Nakamula Admin</title>
+<link rel="stylesheet" href="../style.css">
+<style>.box{background:#fff;border-radius:12px;padding:16px;margin:14px 0;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+input,select,textarea{width:100%;padding:9px;border:1px solid #cdbfae;border-radius:8px;font:inherit;margin:4px 0}
+.row{display:flex;gap:8px;flex-wrap:wrap}.row>*{flex:1;min-width:130px}.t{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+.t div{position:relative}.t img{width:84px;height:64px;object-fit:cover;border-radius:6px}.t button{position:absolute;top:-6px;right:-6px;border:0;background:#b3261e;color:#fff;border-radius:50%;width:22px;height:22px;cursor:pointer}
+.bar{height:10px;background:#e9dfd0;border-radius:6px;overflow:hidden}.bar i{display:block;height:100%;width:0;background:var(--gold)}
+#msg{position:sticky;top:58px;z-index:5;padding:10px;border-radius:8px;display:none;background:#fff3cd}label{font-size:.85rem}.ck{display:inline-flex;align-items:center;gap:5px;margin-right:12px}.ck input{width:auto}</style></head><body>
+<header><div class="w"><b>Nakamula Admin</b><a href="../" style="font-size:.9rem">View site</a></div></header>
+<div class="w"><div id="msg"></div>
+<div id="lock" class="box"><h3>Owner Login</h3><input id="pw" type="password" placeholder="Admin password"><button class="btn" onclick="login()">Enter</button></div>
+<div id="app" style="display:none">
+<div class="box" id="tk"><h3>One-time device setup</h3><p style="margin:0 0 6px">Paste your GitHub access token (saved only on this phone/computer).</p><input id="tok" type="password" placeholder="GitHub token"><button class="btn" onclick="saveTok()">Save</button></div>
+<div class="box"><h3>1. Upload photos (10–20 at a time)</h3><p style="margin:0 0 8px">Pick many photos at once. Each photo becomes a new product. Large phone photos are resized automatically.</p>
+<input id="files" type="file" accept="image/jpeg,image/png,image/webp" multiple><div class="bar"><i id="pb"></i></div><small id="pt"></small></div>
+<h3>2. Name your products</h3><div id="list"></div>
+<div class="box" style="position:sticky;bottom:6px"><button class="btn g" style="width:100%" onclick="publish()">3. Publish to website</button></div></div></div>
+<script src="../config.js"></script>
+<script>
+const S=SITE,$=s=>document.querySelector(s),L=localStorage;let D={products:[]},fsha=null;
+const api=`https://api.github.com/repos/${S.repo}/contents/products.json`;
+const H=()=>({Authorization:'Bearer '+L.nkTok,Accept:'application/vnd.github+json'});
+const msg=(t,bad)=>{const m=$('#msg');m.textContent=t;m.style.display=t?'block':'none';m.style.background=bad?'#f8d7da':'#d1e7dd'};
+const sha=async t=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(t)))].map(b=>b.toString(16).padStart(2,'0')).join('');
+const esc=s=>String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const im=(id,w)=>`https://res.cloudinary.com/${S.cloud}/image/upload/f_auto,q_auto,c_fill,w_${w},h_${w*.75}/${id}`;
+async function login(){const h=await sha($('#pw').value);
+ if(!S.lockHash){prompt('No password set yet. Copy this into lockHash in config.js, commit, then log in:',h);return}
+ if(h!==S.lockHash)return msg('Wrong password',1);msg('');$('#lock').style.display='none';$('#app').style.display='block';start()}
+$('#pw').onkeydown=e=>e.key=='Enter'&&login();
+function saveTok(){L.nkTok=$('#tok').value.trim();start()}
+async function start(){if(!L.nkTok){$('#tk').style.display='block';return}$('#tk').style.display='none';
+ try{const r=await fetch(api+'?ref='+S.branch+'&t='+Date.now(),{headers:H()});if(r.status==401||r.status==403)throw'Token rejected. Create a new token (see README).';
+  if(r.status==404)throw'Repository or products.json not found. Check "repo" in config.js.';const j=await r.json();fsha=j.sha;
+  D=JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(j.content.replace(/\n/g,'')),c=>c.charCodeAt(0))));render()}catch(e){msg(String(e),1);if(String(e).startsWith('Token')){delete L.nkTok;$('#tk').style.display='block'}}}
+async function shrink(f){const b=await createImageBitmap(f),k=Math.min(1,2000/Math.max(b.width,b.height)),c=document.createElement('canvas');c.width=Math.round(b.width*k);c.height=Math.round(b.height*k);c.getContext('2d').drawImage(b,0,0,c.width,c.height);return new Promise(r=>c.toBlob(r,'image/jpeg',.86))}
+function up(blob,cb){return new Promise((ok,no)=>{const x=new XMLHttpRequest(),f=new FormData;f.append('file',blob);f.append('upload_preset',S.preset);
+ x.open('POST',`https://api.cloudinary.com/v1_1/${S.cloud}/image/upload`);x.upload.onprogress=e=>e.lengthComputable&&cb(e.loaded/e.total);
+ x.onload=()=>{try{const j=JSON.parse(x.responseText);x.status<300?ok(j.public_id):no(j.error?.message||'Upload failed')}catch{no('Upload failed')}};x.onerror=()=>no('Network error - check your internet');x.send(f)})}
+async function addFiles(fl,idx){fl=[...fl];let n=0,fail=0;
+ for(const f of fl){n++;$('#pt').textContent=`Uploading ${n} of ${fl.length}: ${f.name}`;
+  try{const b=await shrink(f).catch(()=>{throw'Cannot read '+f.name+' (use JPG, PNG or WebP)'});const id=await up(b,p=>$('#pb').style.width=((n-1+p)/fl.length*100)+'%');
+   if(idx==null)D.products.unshift({id:'p'+Date.now()+n,name:f.name.replace(/\.[^.]+$/,'').replace(/[-_]+/g,' '),category:S.cats[0],description:'',price:'',featured:false,hidden:false,images:[id]});
+   else D.products[idx].images.push(id);render()}catch(e){fail++;msg(String(e),1)}}
+ $('#pb').style.width='100%';$('#pt').textContent=`Done: ${n-fail} uploaded${fail?', '+fail+' failed':''}. Now name them and press Publish.`}
+$('#files').onchange=e=>{addFiles(e.target.files);e.target.value=''};
+function render(){$('#list').innerHTML=D.products.map((p,i)=>`<div class="box"><div class="t">${p.images.map((m,j)=>`<div><img src="${im(m,170)}"><button onclick="rm(${i},${j})" title="Remove photo">×</button></div>`).join('')}</div>
+<label class="btn o d" style="padding:5px 12px;font-size:.8rem">+ Add / replace photos<input type="file" hidden multiple accept="image/*" onchange="addFiles(this.files,${i})"></label>
+<input placeholder="Product name" value="${esc(p.name)}" oninput="D.products[${i}].name=this.value">
+<div class="row"><select onchange="D.products[${i}].category=this.value">${S.cats.map(c=>`<option ${c==p.category?'selected':''}>${c}</option>`).join('')}</select><input type="number" placeholder="Price KSh (optional)" value="${p.price||''}" oninput="D.products[${i}].price=this.value"></div>
+<textarea rows="2" placeholder="Description (size, material, colour)" oninput="D.products[${i}].description=this.value">${esc(p.description)}</textarea>
+<span class="ck"><input type="checkbox" ${p.featured?'checked':''} onchange="D.products[${i}].featured=this.checked"> Featured</span><span class="ck"><input type="checkbox" ${p.hidden?'checked':''} onchange="D.products[${i}].hidden=this.checked"> Hide (unavailable)</span>
+<button class="btn r" style="float:right" onclick="del(${i})">Delete</button></div>`).join('')||'<p>No products yet. Upload photos above.</p>'}
+function rm(i,j){D.products[i].images.splice(j,1);render()}
+function del(i){if(confirm('Delete "'+D.products[i].name+'"?')){D.products.splice(i,1);render()}}
+async function publish(){const bad=D.products.find(p=>!p.name.trim()||!p.images.length);if(bad)return msg('Every product needs a name and at least one photo.',1);
+ msg('Publishing...');const body={message:'Update products',branch:S.branch,sha:fsha,content:btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(D,null,1))))};
+ const r=await fetch(api,{method:'PUT',headers:H(),body:JSON.stringify(body)});const j=await r.json();
+ if(r.ok){fsha=j.content.sha;msg('Published! The website updates in about 1 minute.')}else msg(r.status==409?'Out of date: reload this page and try again.':'Publish failed: '+(j.message||r.status),1)}
+</script></body></html>
