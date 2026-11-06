@@ -1,8 +1,8 @@
 // EDIT THESE 4 VALUES after setup (see README.md). Nothing here is secret.
 window.SITE = {
-  cloud: "YOUR_CLOUDINARY_CLOUD_NAME",   // Cloudinary cloud name
+  cloud: "ciyqemmw",   // Cloudinary cloud name
   preset: "nakamula_unsigned",           // Cloudinary unsigned upload preset
-  repo: "YOUR_GITHUB_USERNAME/nakamula-furnitures", // GitHub repo
+  repo: "domgit2017/nakamula-furnitures", // GitHub repo
   lockHash: "",                          // admin password hash (README step 5)
   branch: "main",
   phone: "0728752586", wa: "254728752586",
